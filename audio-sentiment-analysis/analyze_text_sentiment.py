@@ -66,7 +66,7 @@ print(f"話者ターン数: {len(turns)}")
 print("感情分析モデルをロード中...")
 sentiment = pipeline(
     "sentiment-analysis",
-    model="lxyuan/distilbert-base-multilingual-cased-sentiments-student",
+    model="koheiduck/bert-japanese-finetuned-sentiment",
     truncation=True, max_length=512
 )
 
@@ -75,7 +75,7 @@ scores, speakers = [], []
 for sp, tx in turns:
     result = sentiment(tx[:400])[0]
     label, score = result['label'], result['score']
-    val = score if label.lower() == 'positive' else (-score if label.lower() == 'negative' else 0)
+    val = score if 'POSITIVE' in label.upper() else (-score if 'NEGATIVE' in label.upper() else 0)
     scores.append(val)
     speakers.append(sp)
 
