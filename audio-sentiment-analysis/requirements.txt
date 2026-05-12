@@ -9,3 +9,5 @@ matplotlib>=3.7.0
 fugashi>=1.3.0
 ipadic>=1.0.0
 unidic-lite>=1.0.8
+# Speaker diarization dependencies
+pyannote.audio>=4.0.0

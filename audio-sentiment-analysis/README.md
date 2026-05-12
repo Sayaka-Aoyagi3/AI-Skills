@@ -12,9 +12,10 @@
 
 ```
 audio-sentiment-analysis/
-├── analyze_audio.py           # 音声特徴量抽出・可視化
-├── analyze_text_sentiment.py  # docx文字起こし + テキスト感情分析
-├── analyze_vtt_multimodal.py  # YouTube VTT字幕 + 音声 マルチモーダル分析
+├── analyze_audio.py                 # 音声特徴量抽出・可視化
+├── analyze_text_sentiment.py        # docx文字起こし + テキスト感情分析
+├── analyze_vtt_multimodal.py        # YouTube VTT字幕 + 音声 マルチモーダル分析
+├── analyze_speaker_propagation.py   # 話者分離 + 感情伝播可視化（4話者対応）
 └── requirements.txt
 ```
 
@@ -73,8 +74,8 @@ python analyze_text_sentiment.py
 ## 今後の改善候補
 
 - [ ] WhisperX による強制アライメント（タイムスタンプ付き文字起こし）
-- [ ] pyannote-audio による話者分離
-- [ ] 複数話者の感情伝播の可視化
+- [ ] ~~pyannote-audio による話者分離~~ → **完了**（analyze_speaker_propagation.py）
+- [ ] ~~複数話者の感情伝播の可視化~~ → **完了**（相互相関ヒートマップ実装済み）
 
 ## 初出・実績
 
