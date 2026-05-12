@@ -12,8 +12,9 @@
 
 ```
 audio-sentiment-analysis/
-├── analyze_audio.py          # 音声特徴量抽出・可視化
-├── analyze_text_sentiment.py # テキスト感情分析 + マルチモーダル比較
+├── analyze_audio.py           # 音声特徴量抽出・可視化
+├── analyze_text_sentiment.py  # docx文字起こし + テキスト感情分析
+├── analyze_vtt_multimodal.py  # YouTube VTT字幕 + 音声 マルチモーダル分析
 └── requirements.txt
 ```
 
@@ -52,7 +53,7 @@ python analyze_text_sentiment.py
 
 | モデル | 用途 | 言語 |
 |--------|------|------|
-| `lxyuan/distilbert-base-multilingual-cased-sentiments-student` | テキスト感情分類 | 多言語（日本語対応） |
+| `koheiduck/bert-japanese-finetuned-sentiment` | テキスト感情分類 | 日本語特化BERT |
 | librosa pYIN | ピッチ（F0）推定 | 言語非依存 |
 
 ## 出力の読み方
@@ -66,7 +67,6 @@ python analyze_text_sentiment.py
 
 ## 制限事項
 
-- 日本語感情分析の精度は英語より低い（多言語モデル使用のため）
 - 音声とテキストの時間アライメントは等分割推定（粗い）
 - 話者分離未対応（混合音声では精度低下）
 
@@ -74,7 +74,6 @@ python analyze_text_sentiment.py
 
 - [ ] WhisperX による強制アライメント（タイムスタンプ付き文字起こし）
 - [ ] pyannote-audio による話者分離
-- [ ] 日本語特化感情モデルへの切り替え
 - [ ] 複数話者の感情伝播の可視化
 
 ## 初出・実績
