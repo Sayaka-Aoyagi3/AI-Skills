@@ -5,3 +5,7 @@ torch>=2.0.0
 torchaudio>=2.0.0
 numpy>=1.24.0
 matplotlib>=3.7.0
+# Japanese BERT model dependencies
+fugashi>=1.3.0
+ipadic>=1.0.0
+unidic-lite>=1.0.8
