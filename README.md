@@ -8,6 +8,13 @@
 |---------|------|-------------|
 | [audio-sentiment-analysis](./audio-sentiment-analysis/) | 音声の音響特徴量抽出 + テキスト感情分析のマルチモーダル分析 | librosa, transformers |
 
+## Claudeのスキルとして使う
+
+各フォルダの `SKILL.md` は、Claudeがそのフォルダのツールを使うときに読む手順書です。
+
+- **Claude Code:** フォルダごと `~/.claude/skills/` にコピーすると、すべてのプロジェクトで使えます
+- **claude.ai:** フォルダをzipにして「設定 → 機能 → スキル」からアップロードします
+
 ## 動作環境
 
 - Python 3.10+

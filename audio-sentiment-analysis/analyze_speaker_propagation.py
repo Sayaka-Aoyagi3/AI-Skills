@@ -2,71 +2,40 @@
 話者分離 + 感情伝播可視化
 pyannote-audio で話者分離 → VTTとマージ → 感情スコア計算 → 相互相関ヒートマップ
 
-必要な環境変数: HF_TOKEN
+必要な環境変数: HF_TOKEN（pyannote/speaker-diarization-3.1 の利用規約に同意したHugging Faceアカウントのトークン）
+
+Usage:
+    python analyze_speaker_propagation.py input.wav input.ja.vtt -o propagation.png \
+        --speakers 4 --title "MTGコマンダー戦"
 """
 
+import argparse
 import os
-import re
+import warnings
+
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib
-from matplotlib.patches import Patch
-import torch
 import librosa
-from transformers import pipeline
-import warnings
+
+from common import setup_japanese_font, parse_vtt, load_sentiment_model, sentiment_value
+
 warnings.filterwarnings("ignore")
-
-matplotlib.rcParams['font.family'] = 'MS Gothic'
-
-# --- 設定 ---
-WAV_PATH  = r"C:\Users\55kas\Downloads\mtg_commander.wav"
-VTT_PATH  = r"C:\Users\55kas\Downloads\mtg_commander.ja.vtt"
-OUT_PATH  = r"C:\Users\55kas\NightAru\mtg_speaker_propagation.png"
-HF_TOKEN  = os.environ.get("HF_TOKEN")
-WINDOW_SEC = 60   # 話者ごとの感情集約ウィンドウ（秒）
-N_SPEAKERS = 4    # コマンダー戦は4人
-
-
-# --- VTT解析 ---
-def parse_vtt(path):
-    with open(path, encoding='utf-8') as f:
-        content = f.read()
-    content = re.sub(r'<[^>]+>', '', content)
-    blocks = re.split(r'\n\n+', content)
-    segments = []
-    for block in blocks:
-        lines = block.strip().split('\n')
-        time_line = next((l for l in lines if '-->' in l), None)
-        if not time_line:
-            continue
-        m = re.match(r'(\d+:\d+:\d+\.\d+)\s*-->', time_line)
-        if not m:
-            continue
-        t_str = m.group(1)
-        h, mn, s = t_str.split(':')
-        t_sec = int(h)*3600 + int(mn)*60 + float(s)
-        text_lines = [l.strip() for l in lines if '-->' not in l and l.strip() and l.strip() != 'WEBVTT']
-        text = re.sub(r'\[.*?\]', '', ' '.join(text_lines)).strip()
-        if text:
-            segments.append((t_sec, text))
-    return segments
 
 
 # --- 話者分離 ---
-def run_diarization(wav_path, hf_token, n_speakers):
-    print("音声を読み込み中...")
-    y, sr = librosa.load(wav_path, sr=16000, mono=True)
+def run_diarization(y, sr, hf_token, n_speakers):
+    import torch
+    from pyannote.audio import Pipeline
+
     waveform = torch.tensor(y).unsqueeze(0)  # (1, samples)
 
     print("話者分離モデルをロード中...")
-    from pyannote.audio import Pipeline
     pipe = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
         token=hf_token
     )
 
-    print(f"話者分離を実行中（{n_speakers}人）...")
+    print(f"話者分離を実行中（{f'{n_speakers}人' if n_speakers else '人数は自動推定'}）...")
     diarization = pipe(
         {"waveform": waveform, "sample_rate": sr},
         num_speakers=n_speakers
@@ -110,16 +79,13 @@ def compute_speaker_sentiments(labeled, duration, sentiment_model, window_sec, s
             if not combined:
                 scores[spk].append(np.nan)
                 continue
-            result = sentiment_model(combined[:400])[0]
-            label, score = result['label'], result['score']
-            val = score if 'POSITIVE' in label.upper() else (-score if 'NEGATIVE' in label.upper() else 0)
-            scores[spk].append(val)
+            scores[spk].append(sentiment_value(sentiment_model(combined[:400])[0]))
 
     return np.array(times), {spk: np.array(v) for spk, v in scores.items()}
 
 
-# --- 相互相関ヒートマップ ---
-def plot_cross_correlation(scores, speakers):
+# --- 相互相関 ---
+def compute_cross_correlation(scores, speakers):
     n = len(speakers)
     corr_matrix = np.zeros((n, n))
     lag_matrix = np.zeros((n, n))
@@ -142,78 +108,91 @@ def plot_cross_correlation(scores, speakers):
 
 
 # --- メイン ---
-print("VTT字幕を解析中...")
-segments = parse_vtt(VTT_PATH)
-print(f"  字幕セグメント数: {len(segments)}")
+def main():
+    ap = argparse.ArgumentParser(description="話者分離 + 感情伝播の可視化")
+    ap.add_argument("wav", help="音声ファイル")
+    ap.add_argument("vtt", help="タイムスタンプ付き字幕（VTT）")
+    ap.add_argument("-o", "--out", default="speaker_propagation.png", help="出力グラフのパス")
+    ap.add_argument("--speakers", type=int, default=None, help="話者数（省略時は自動推定）")
+    ap.add_argument("--window", type=float, default=60, help="話者ごとの感情集約ウィンドウ（秒）")
+    ap.add_argument("--title", default="話者別分析", help="グラフタイトル")
+    args = ap.parse_args()
 
-turns = run_diarization(WAV_PATH, HF_TOKEN, N_SPEAKERS)
+    setup_japanese_font()
 
-speakers = sorted(set(spk for _, _, spk in turns))
-print(f"  検出話者: {speakers}")
+    print("VTT字幕を解析中...")
+    segments = parse_vtt(args.vtt)
+    print(f"  字幕セグメント数: {len(segments)}")
 
-print("話者ラベルをVTTに付与中...")
-labeled = assign_speakers(segments, turns)
+    print("音声を読み込み中...")
+    y, sr = librosa.load(args.wav, sr=16000, mono=True)
+    duration = librosa.get_duration(y=y, sr=sr)
 
-print("感情分析モデルをロード中...")
-sentiment = pipeline(
-    "sentiment-analysis",
-    model="koheiduck/bert-japanese-finetuned-sentiment",
-    truncation=True, max_length=512
-)
+    turns = run_diarization(y, sr, os.environ.get("HF_TOKEN"), args.speakers)
 
-y_tmp, sr_tmp = librosa.load(WAV_PATH, sr=16000, mono=True)
-duration = librosa.get_duration(y=y_tmp, sr=sr_tmp)
+    speakers = sorted(set(spk for _, _, spk in turns))
+    print(f"  検出話者: {speakers}")
 
-print("話者ごとに感情スコアを計算中...")
-times, scores = compute_speaker_sentiments(labeled, duration, sentiment, WINDOW_SEC, speakers)
+    print("話者ラベルをVTTに付与中...")
+    labeled = assign_speakers(segments, turns)
 
-print("相互相関を計算中...")
-corr_matrix, lag_matrix = plot_cross_correlation(scores, speakers)
+    print("感情分析モデルをロード中...")
+    sentiment = load_sentiment_model()
 
-# --- 可視化 ---
-colors = ['royalblue', 'tomato', 'seagreen', 'darkorange']
-spk_colors = {spk: colors[i % len(colors)] for i, spk in enumerate(speakers)}
+    print("話者ごとに感情スコアを計算中...")
+    times, scores = compute_speaker_sentiments(labeled, duration, sentiment, args.window, speakers)
 
-fig, axes = plt.subplots(2, 1, figsize=(14, 10))
-fig.suptitle("MTGコマンダー戦 - 話者別感情伝播分析", fontsize=13, fontweight='bold')
+    print("相互相関を計算中...")
+    corr_matrix, lag_matrix = compute_cross_correlation(scores, speakers)
 
-# 上段：話者別感情時系列
-ax = axes[0]
-for spk in speakers:
-    s = scores[spk]
-    valid = ~np.isnan(s)
-    ax.plot(times[valid], s[valid], color=spk_colors[spk], linewidth=1.5,
-            marker='o', markersize=3, label=spk)
-ax.axhline(0, color='black', linewidth=0.8)
-ax.set_ylabel("感情価\n(+ポジ / -ネガ)", fontsize=9)
-ax.set_ylim(-1.1, 1.1)
-ax.legend(fontsize=8, loc='upper right')
-ax.grid(True, alpha=0.3)
-ax.set_title("話者別 感情スコアの時系列", fontsize=10)
+    # --- 可視化 ---
+    colors = ['royalblue', 'tomato', 'seagreen', 'darkorange']
+    spk_colors = {spk: colors[i % len(colors)] for i, spk in enumerate(speakers)}
 
-# 下段：相互相関ヒートマップ
-ax2 = axes[1]
-im = ax2.imshow(corr_matrix, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
-ax2.set_xticks(range(len(speakers)))
-ax2.set_yticks(range(len(speakers)))
-ax2.set_xticklabels(speakers, fontsize=9)
-ax2.set_yticklabels(speakers, fontsize=9)
-ax2.set_title("感情伝播 相互相関ヒートマップ\n（行→列の影響度、正=同期・負=逆相関）", fontsize=10)
-for i in range(len(speakers)):
-    for j in range(len(speakers)):
-        lag = int(lag_matrix[i, j])
-        ax2.text(j, i, f"{corr_matrix[i,j]:.2f}\nlag={lag}", ha='center', va='center',
-                 fontsize=7, color='black')
-plt.colorbar(im, ax=ax2, label='相関係数')
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+    fig.suptitle(f"{args.title} - 話者別感情伝播分析", fontsize=13, fontweight='bold')
 
-plt.tight_layout()
-plt.savefig(OUT_PATH, dpi=150, bbox_inches='tight')
-print(f"\n[完了] {OUT_PATH}")
+    # 上段：話者別感情時系列
+    ax = axes[0]
+    for spk in speakers:
+        s = scores[spk]
+        valid = ~np.isnan(s)
+        ax.plot(times[valid], s[valid], color=spk_colors[spk], linewidth=1.5,
+                marker='o', markersize=3, label=spk)
+    ax.axhline(0, color='black', linewidth=0.8)
+    ax.set_ylabel("感情価\n(+ポジ / -ネガ)", fontsize=9)
+    ax.set_ylim(-1.1, 1.1)
+    ax.legend(fontsize=8, loc='upper right')
+    ax.grid(True, alpha=0.3)
+    ax.set_title("話者別 感情スコアの時系列", fontsize=10)
 
-# サマリー
-print("\n--- 感情伝播サマリー ---")
-for i, spk_a in enumerate(speakers):
-    for j, spk_b in enumerate(speakers):
-        if i != j and abs(corr_matrix[i, j]) > 0.3:
-            direction = "正相関（同期）" if corr_matrix[i, j] > 0 else "逆相関"
-            print(f"  {spk_a} → {spk_b}: {corr_matrix[i,j]:.2f} ({direction}, lag={int(lag_matrix[i,j])})")
+    # 下段：相互相関ヒートマップ
+    ax2 = axes[1]
+    im = ax2.imshow(corr_matrix, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
+    ax2.set_xticks(range(len(speakers)))
+    ax2.set_yticks(range(len(speakers)))
+    ax2.set_xticklabels(speakers, fontsize=9)
+    ax2.set_yticklabels(speakers, fontsize=9)
+    ax2.set_title("感情伝播 相互相関ヒートマップ\n（行→列の影響度、正=同期・負=逆相関）", fontsize=10)
+    for i in range(len(speakers)):
+        for j in range(len(speakers)):
+            lag = int(lag_matrix[i, j])
+            ax2.text(j, i, f"{corr_matrix[i,j]:.2f}\nlag={lag}", ha='center', va='center',
+                     fontsize=7, color='black')
+    plt.colorbar(im, ax=ax2, label='相関係数')
+
+    plt.tight_layout()
+    plt.savefig(args.out, dpi=150, bbox_inches='tight')
+    print(f"\n[完了] {args.out}")
+
+    # サマリー
+    print("\n--- 感情伝播サマリー ---")
+    for i, spk_a in enumerate(speakers):
+        for j, spk_b in enumerate(speakers):
+            if i != j and abs(corr_matrix[i, j]) > 0.3:
+                direction = "正相関（同期）" if corr_matrix[i, j] > 0 else "逆相関"
+                print(f"  {spk_a} → {spk_b}: {corr_matrix[i,j]:.2f} ({direction}, lag={int(lag_matrix[i,j])})")
+
+
+if __name__ == "__main__":
+    main()

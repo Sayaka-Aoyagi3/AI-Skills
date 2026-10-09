@@ -12,11 +12,15 @@
 
 ```
 audio-sentiment-analysis/
+├── SKILL.md                         # Claude用スキル定義（Claudeがこのツールを使うときの手順）
+├── common.py                        # 共通処理（日本語フォント・VTT解析・音響特徴量）
 ├── analyze_audio.py                 # 音声特徴量抽出・可視化
 ├── analyze_text_sentiment.py        # docx文字起こし + テキスト感情分析
 ├── analyze_vtt_multimodal.py        # YouTube VTT字幕 + 音声 マルチモーダル分析
-├── analyze_speaker_propagation.py   # 話者分離 + 感情伝播可視化（4話者対応）
-└── requirements.txt
+├── analyze_speaker_propagation.py   # 話者分離 + 感情伝播可視化
+├── requirements.txt                 # 実行用
+├── requirements-dev.txt             # テスト用（モデル不要の軽量セット）
+└── tests/
 ```
 
 ## セットアップ
@@ -27,28 +31,30 @@ pip install -r requirements.txt
 
 ## 使い方
 
-### 1. 音声のみ分析
+パスはすべてコマンドライン引数で渡す（スクリプトの書き換えは不要）。詳しいオプションは各スクリプトの `--help` を参照。
+日本語フォントはOSに入っているものを自動で選ぶ（MS Gothic / Yu Gothic / Hiragino / Noto Sans CJK / IPAゴシックなど）。
 
-```python
-# analyze_audio.py の WAV_PATH を変更して実行
-WAV_PATH = r"your_audio.wav"
-python analyze_audio.py
+```bash
+# 1. 音声のみ
+python analyze_audio.py your_audio.wav -o audio_analysis.png
+
+# 2. 音声 + docx文字起こし（docxはそのまま渡せる。展開は不要）
+python analyze_text_sentiment.py your_audio.wav transcript.docx -o multimodal.png \
+    --speaker "話者 2=ハヤカワ" --speaker "話者 3=usutaku"
+
+# 3. 音声 + VTT字幕
+python analyze_vtt_multimodal.py input.wav input.ja.vtt -o output.png --title "番組名"
+
+# 4. 話者分離 + 感情伝播（環境変数 HF_TOKEN が必要）
+python analyze_speaker_propagation.py input.wav input.ja.vtt -o propagation.png --speakers 4 --title "MTGコマンダー戦"
 ```
 
-出力：`nagara_ai_analysis.png`（ピッチ・音量・ZCR の時系列グラフ）
+## テスト
 
-### 2. マルチモーダル分析（音声 + テキスト）
-
-文字起こしdocxが必要。docxのXMLを展開してから実行。
-
-```python
-# analyze_text_sentiment.py の以下を変更
-WAV_PATH  = r"your_audio.wav"
-DOCX_XML  = r"unpacked_docx/word/document.xml"
-python analyze_text_sentiment.py
+```bash
+pip install -r requirements-dev.txt
+pytest tests
 ```
-
-出力：`nagara_ai_multimodal.png`（ピッチ変動・音量・感情バーの比較グラフ）
 
 ## 使用モデル
 
@@ -69,7 +75,7 @@ python analyze_text_sentiment.py
 ## 制限事項
 
 - 音声とテキストの時間アライメントは等分割推定（粗い）
-- 話者分離未対応（混合音声では精度低下）
+- 話者分離に対応しているのは analyze_speaker_propagation.py のみ（他は混合音声で精度が落ちる）
 
 ## 今後の改善候補
 
